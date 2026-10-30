@@ -30,6 +30,9 @@ Producto de ML reproducible (Git + DVC + Airflow 3) que genera pronóstico de ve
 - Ingestar y validar hasta un corte: `python scripts/ingestar.py --corte 2017-02-01` (sale con código 1 si hay cuarentena)
 - Capas: `data/historico`, `data/bandeja` (solo lectura), `data/procesado` (válido, todas las versiones), `data/cuarentena`
 - Con anomalías simuladas (para pruebas): agregar `--anomalias`
+- Backtest y decisión de reemplazo: `python scripts/backtest.py --corte 2017-08-01 [--promover]` (escribe `reports/`)
+- Pronóstico + pedido: `python scripts/pronosticar.py --corte 2017-06-30 --modelo vigente|baseline|lgbm` (publica en `data/forecasts/corte=<fecha>/`)
+- Regla de features: usar solo información con fecha <= origen del pronóstico; lags >= horizonte; nunca `onpromotion` futuro.
 
 ## Estilo
 

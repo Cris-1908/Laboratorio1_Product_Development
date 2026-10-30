@@ -1,14 +1,32 @@
-version: 1
-horizonte_dias: 14
-cuantiles: [0.1, 0.5, 0.9]
+version: 2
+horizonte_dias: 7                         # pronóstico semanal: 7 días hacia adelante
+cuantiles: [0.1, 0.25, 0.5, 0.75, 0.9]    # deben cubrir las razones críticas de costos.yaml (0.25 a 0.80)
+
+baseline:
+  n_semanas: 8                            # mismo día de la semana, últimas N semanas (cuantiles empíricos)
+
+entrenamiento:
+  dias_historia: 364                      # ventana de orígenes de entrenamiento
+  paso_origen_dias: 14                    # un origen cada 14 días
+  dias_extra_features: 100                # historia adicional para medias móviles
+
+lightgbm:
+  n_rounds: 150
+  learning_rate: 0.08
+  num_leaves: 63
+  min_data_in_leaf: 100
+  feature_fraction: 0.8
+  bagging_fraction: 0.8
+  seed: 42
+  num_threads: 4                          # fijo + deterministic=true => resultados reproducibles
 
 validacion:
-  esquema: rolling_origin
+  esquema: rolling_origin                 # mismos folds para todos los modelos
   n_folds: 4
   paso_dias: 14
 
-# Criterio explícito para que un modelo nuevo (challenger) reemplace al vigente
+# Criterio explícito para que un modelo nuevo (retador) reemplace al vigente
 reemplazo:
-  mejora_min_costo_pct: 2.0     # el costo de negocio debe bajar al menos 2%
-  folds_min_ganados: 3          # en al menos 3 de los 4 folds
-  max_empeora_pinball_pct: 0.0  # el pinball loss no puede empeorar
+  mejora_min_costo_pct: 2.0               # el costo de negocio debe bajar al menos 2% en un fold para contarlo como ganado
+  folds_min_ganados: 3                    # y debe ganar en al menos 3 de los 4 folds
+  max_empeora_pinball_pct: 0.0            # el pinball loss promedio no puede empeorar

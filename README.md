@@ -21,4 +21,15 @@ python scripts/generar_bandeja.py --raw data/raw --salida data
 pytest -q
 ```
 
-_(pendiente: DVC, Airflow, reproducción de un pronóstico pasado, evidencia)_
+```bash
+# 4. Validar e ingerir lo que haya llegado hasta un corte (código de salida 1 si hay cuarentena)
+python scripts/ingestar.py --corte 2017-06-30
+
+# 5. Backtest baseline vs LightGBM y decisión de reemplazo (escribe reports/)
+python scripts/backtest.py --corte 2017-06-30 --promover
+
+# 6. Pronóstico y pedido sugerido para un corte
+python scripts/pronosticar.py --corte 2017-06-30 --modelo vigente
+```
+
+_(pendiente: DVC, Airflow, seguimiento del desempeño, reproducción de un pronóstico pasado, evidencia)_
