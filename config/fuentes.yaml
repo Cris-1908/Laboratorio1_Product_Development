@@ -1,0 +1,27 @@
+version: 1
+
+# Parámetros del simulador de la bandeja (sistema de origen)
+bandeja:
+  corte_historico: "2016-12-31"   # todo hasta esta fecha va a la carga histórica
+  seed: 42
+  n_correcciones_ventas: 8        # fechas de ventas que reciben una versión corregida (v2)
+  n_correcciones_transacciones: 4
+  dias_ultimos_sin_tocar: 10      # no se corrigen/rompen los últimos N días
+  anomalias:                      # solo con --anomalias; cantidad de archivos afectados por tipo
+    llegada_tardia: 3
+    faltante: 2
+    duplicados: 3
+    negativos: 3
+    fecha_incorrecta: 2
+    columna_faltante: 2
+
+# Ritmo de llegada de cada fuente
+fuentes:
+  ventas:        {rezago_dias: 1}          # el día D llega D+1 06:00
+  transacciones: {rezago_dias: 1}
+  petroleo:      {rezago_dias: 2}
+  feriados:      {anticipacion_dias: 30}   # llega 30 días antes de la fecha
+  tiendas:       {estatica: true}          # solo en la carga histórica
+
+validacion:
+  dias_sin_operacion: ["12-25"]   # esperado: no hay ventas ni archivo; no cuenta como faltante

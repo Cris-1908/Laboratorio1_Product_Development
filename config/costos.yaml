@@ -1,0 +1,24 @@
+# Costos de negocio (SUPUESTOS: justificarlos en DECISIONES.md).
+# costo_quiebre (cu): costo por unidad faltante. costo_merma (co): costo por unidad sobrante.
+# Pedido óptimo (newsvendor) = cuantil cu / (cu + co) del pronóstico.
+version: 1
+
+default:
+  costo_quiebre: 2.0
+  costo_merma: 1.0
+
+por_familia:
+  # Alta rotación: quedarse sin producto es más caro que el sobrante.
+  "GROCERY I":  {costo_quiebre: 4.0, costo_merma: 1.0}
+  "BEVERAGES":  {costo_quiebre: 4.0, costo_merma: 1.0}
+  "CLEANING":   {costo_quiebre: 3.0, costo_merma: 1.0}
+  # Perecederos: la merma pesa más.
+  "BREAD/BAKERY":  {costo_quiebre: 1.0, costo_merma: 3.0}
+  "DAIRY":         {costo_quiebre: 1.5, costo_merma: 3.0}
+  "EGGS":          {costo_quiebre: 1.5, costo_merma: 2.5}
+  "MEATS":         {costo_quiebre: 1.5, costo_merma: 3.0}
+  "POULTRY":       {costo_quiebre: 1.5, costo_merma: 3.0}
+  "SEAFOOD":       {costo_quiebre: 1.5, costo_merma: 3.5}
+  "PRODUCE":       {costo_quiebre: 1.5, costo_merma: 3.0}
+  "DELI":          {costo_quiebre: 1.5, costo_merma: 3.0}
+  "PREPARED FOODS": {costo_quiebre: 1.0, costo_merma: 3.0}

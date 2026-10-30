@@ -1,0 +1,14 @@
+version: 1
+horizonte_dias: 14
+cuantiles: [0.1, 0.5, 0.9]
+
+validacion:
+  esquema: rolling_origin
+  n_folds: 4
+  paso_dias: 14
+
+# Criterio explícito para que un modelo nuevo (challenger) reemplace al vigente
+reemplazo:
+  mejora_min_costo_pct: 2.0     # el costo de negocio debe bajar al menos 2%
+  folds_min_ganados: 3          # en al menos 3 de los 4 folds
+  max_empeora_pinball_pct: 0.0  # el pinball loss no puede empeorar

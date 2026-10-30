@@ -1,0 +1,8 @@
+pandas>=2.1
+numpy>=1.26
+pyyaml>=6.0
+pytest>=8.0
+# Se agregan en fases siguientes:
+# lightgbm
+# pandera
+# dvc
