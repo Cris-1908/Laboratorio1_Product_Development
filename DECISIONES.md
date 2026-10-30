@@ -11,7 +11,12 @@ Formato: decisión, alternativas consideradas, justificación.
 - Feriados son futuro-conocido legítimo solo si ya llegaron al corte.
 - Alternativa rechazada: filtrar solo por fecha de negocio. Ignora rezagos y correcciones, y produce fuga de información.
 
-_(completar: lags de features vs. horizonte)_
+### Features sin fuga de información
+- Un pronóstico con corte C se emite desde el **origen** = último día cuyo archivo ya llegó (C menos 1 día 6 h, a fecha). Toda feature usa solo datos con fecha <= origen.
+- Enfoque **directo multi-horizonte**: una fila por (origen, horizonte h, serie) con `h` como feature. Las medias móviles (7, 28, 91 días) terminan en el origen. Los rezagos "mismo día de la semana" usan la semana mínima k = ceil(h/7), así el rezago siempre cae en o antes del origen (lag >= horizonte).
+- `onpromotion` de días futuros **no** se usa (no llega por adelantado en la bandeja); solo el promedio de promociones de los últimos 7 y 28 días.
+- Futuro-conocido legítimo: calendario (día de la semana, día del mes, quincena/fin de mes) y feriados nacionales **que ya llegaron al corte** (llegan 30 días antes). Se ignoran feriados regionales y locales (simplificación).
+- Probado: envenenar los datos posteriores al origen no cambia ninguna feature.
 
 ## 2. Simulación del sistema de origen
 
@@ -37,6 +42,15 @@ _(completar: lags de features vs. horizonte)_
 
 **Decisión:** costos en `config/costos.yaml` por familia (supuestos: alta rotación con quiebre más caro, perecederos con merma más cara). Pedido = cuantil `cu/(cu+co)` del pronóstico (newsvendor).
 
-## 6. Modelos y criterio de reemplazo
+## 6. Modelos, validación y criterio de reemplazo
 
-_(completar)_
+- **Horizonte:** 7 días (pedido semanal), configurable en `config/modelo.yaml`.
+- **Baseline:** seasonal naive. Cuantiles empíricos del mismo día de la semana en las últimas 8 semanas. Piso de comparación que además entrega incertidumbre.
+- **Modelo ML:** LightGBM con regresión cuantil (q10, q25, q50, q75, q90), un modelo global por cuantil, objetivo en log1p (los cuantiles se conservan al des-transformar). Cuantiles ordenados para evitar cruces y sin negativos.
+- **Deep learning:** no se usa. El costo (más cómputo, más riesgo de reproducibilidad) no se justifica frente a un modelo de árboles con 1,782 series diarias.
+- **Validación:** rolling-origin con 4 folds separados 14 días, **los mismos folds para todos los modelos**. Cada fold lee la información tal como estaba disponible a su corte (as-of, incluidas las correcciones que aún no habían llegado) y se evalúa contra la realidad final.
+- **Métricas técnicas:** pinball loss (promedio de cuantiles), WAPE y sesgo con la mediana.
+- **Métrica de negocio:** costo = cu·faltante + co·sobrante, con los costos de `config/costos.yaml`, sobre el pedido sugerido.
+- **Pedido sugerido (newsvendor):** cuantil cu/(cu+co) del pronóstico, interpolado linealmente entre los cuantiles disponibles; fuera de [q10, q90] se acota. Pedido diario por tienda y familia.
+- **Criterio de reemplazo:** el retador reemplaza al vigente si baja el costo de negocio >= 2% en al menos 3 de 4 folds **y** su pinball promedio no empeora. Parámetros en `config/modelo.yaml`. El vigente se registra en `data/modelos/vigente.json` (por defecto: baseline).
+- **Supuesto a validar:** con datos sintéticos simples el baseline empata o gana, y el criterio rechaza correctamente al retador. El resultado con Favorita real queda documentado en `reports/`.
