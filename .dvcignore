@@ -1,0 +1,4 @@
+# Ignorar para el cálculo de hashes de DVC (evita falsos "changed deps")
+__pycache__/
+*.pyc
+.pytest_cache/

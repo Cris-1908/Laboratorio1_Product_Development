@@ -11,7 +11,7 @@ Producto de ML reproducible (Git + DVC + Airflow 3) que genera pronóstico de ve
 5. **Idempotencia.** Re-ejecutar una tarea produce el mismo resultado: escribir por partición con reemplazo atómico (archivo temporal + rename) o upsert por llave `(fecha, tienda, familia)`.
 6. **Datos inválidos detienen el flujo** (cuarentena + falla). Situaciones esperadas del negocio (25 dic sin ventas, tienda cerrada, ceros, petróleo faltante en fin de semana) se registran pero NO fallan.
 7. **Costos y parámetros en `config/*.yaml`**, versionados. Cambiar un costo cambia el pedido sin tocar código.
-8. **Ningún dato ni modelo en Git.** Todo en `data/` va a DVC. `data/` está en `.gitignore`.
+8. **Ningún dato ni modelo en Git.** Todo en `data/` va a DVC. `data/.gitignore` lo mantiene DVC (nunca una regla `data/*` en la raíz).
 9. **Semillas fijas** en todo lo aleatorio.
 10. Trabajar por ramas y Pull Requests; `main` protegida; pytest debe pasar antes de mergear.
 
@@ -32,6 +32,10 @@ Producto de ML reproducible (Git + DVC + Airflow 3) que genera pronóstico de ve
 - Con anomalías simuladas (para pruebas): agregar `--anomalias`
 - Backtest y decisión de reemplazo: `python scripts/backtest.py --corte 2017-08-01 [--promover]` (escribe `reports/`)
 - Pronóstico + pedido: `python scripts/pronosticar.py --corte 2017-06-30 --modelo vigente|baseline|lgbm` (publica en `data/forecasts/corte=<fecha>/`)
+- Features/entrenamiento: `python scripts/preparar.py --corte <f>` y `python scripts/entrenar.py --corte <f>`
+- Seguimiento: `python scripts/seguimiento.py --corte <f>`; reproducción: `python scripts/verificar_pronostico.py --corte <f>`
+- DVC: `dvc repro` / `dvc push` (cortes en `params.yaml`); backfill Airflow: `bash scripts/backfill.sh`
+- Modelo vigente: `config/vigente.json` (en Git, para que el cambio sea revisable en PR)
 - Regla de features: usar solo información con fecha <= origen del pronóstico; lags >= horizonte; nunca `onpromotion` futuro.
 
 ## Estilo

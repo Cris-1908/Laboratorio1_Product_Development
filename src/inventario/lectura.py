@@ -45,7 +45,7 @@ def leer_asof(fuente: str, corte, data_dir) -> pd.DataFrame:
 
     m = cargar_manifest(data_dir / "bandeja")
     m = m[(m.fuente == fuente) & (m.llegada_ts <= corte)]
-    m = m[[(data_dir / "procesado" / a).exists() for a in m.archivo]]
+    m = m[m.archivo.map(lambda a: (data_dir / "procesado" / a).exists()).astype(bool)]
     m = m.sort_values(["llegada_ts", "version"]).groupby("fecha_negocio").tail(1)
 
     partes = [hist]
@@ -55,3 +55,11 @@ def leer_asof(fuente: str, corte, data_dir) -> pd.DataFrame:
         df["version"] = r.version
         partes.append(df)
     return pd.concat(partes, ignore_index=True).sort_values("date", kind="stable").reset_index(drop=True)
+
+
+def ultimo_corte_procesado(data_dir) -> str | None:
+    """Fecha (YYYY-MM-DD) de la última llegada ya validada y procesada; None si no hay nada."""
+    data_dir = Path(data_dir)
+    m = cargar_manifest(data_dir / "bandeja")
+    m = m[m.archivo.map(lambda a: (data_dir / "procesado" / a).exists()).astype(bool)]
+    return None if m.empty else f"{m.llegada_ts.max():%Y-%m-%d}"

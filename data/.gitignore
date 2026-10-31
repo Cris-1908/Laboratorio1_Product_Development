@@ -1,0 +1,11 @@
+# Los datos NO van a Git: se versionan con DVC (DVC agrega aquí sus salidas automáticamente).
+/raw
+/historico
+/bandeja
+/procesado
+/cuarentena
+/features
+/modelos
+/forecasts
+/seguimiento
+/anomalias_verdad.csv

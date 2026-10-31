@@ -1,11 +1,13 @@
-data/
-!data/.gitkeep
+# Los datos y artefactos viven en data/ y se ignoran desde data/.gitignore (lo mantiene DVC).
+# No uses una regla "data/*" aquí: confunde a `dvc checkout` y borra data/raw.
+
+# Airflow local (logs, config generada, plugins)
+airflow/
+.env
+
 __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
 *.egg-info/
-.env
-airflow/logs/
-airflow/plugins/__pycache__/
 .ipynb_checkpoints/

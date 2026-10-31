@@ -1,0 +1,5 @@
+# Parámetros del pipeline DVC (dvc.yaml). Cambiar un corte vuelve a ejecutar solo las etapas afectadas.
+corte: "2017-07-31"              # corte del pronóstico
+corte_seguimiento: "2017-08-14"  # corte del seguimiento del desempeño
+modelo: vigente                  # vigente | baseline | lgbm
+anomalias_flag: ""               # "--anomalias" para simular archivos defectuosos

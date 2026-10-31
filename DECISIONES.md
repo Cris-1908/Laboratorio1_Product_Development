@@ -52,5 +52,19 @@ Formato: decisión, alternativas consideradas, justificación.
 - **Métricas técnicas:** pinball loss (promedio de cuantiles), WAPE y sesgo con la mediana.
 - **Métrica de negocio:** costo = cu·faltante + co·sobrante, con los costos de `config/costos.yaml`, sobre el pedido sugerido.
 - **Pedido sugerido (newsvendor):** cuantil cu/(cu+co) del pronóstico, interpolado linealmente entre los cuantiles disponibles; fuera de [q10, q90] se acota. Pedido diario por tienda y familia.
-- **Criterio de reemplazo:** el retador reemplaza al vigente si baja el costo de negocio >= 2% en al menos 3 de 4 folds **y** su pinball promedio no empeora. Parámetros en `config/modelo.yaml`. El vigente se registra en `data/modelos/vigente.json` (por defecto: baseline).
+- **Criterio de reemplazo:** el retador reemplaza al vigente si baja el costo de negocio >= 2% en al menos 3 de 4 folds **y** su pinball promedio no empeora. Parámetros en `config/modelo.yaml`. El vigente se registra en `config/vigente.json` (en Git, así el cambio de modelo pasa por PR) (por defecto: baseline).
 - **Supuesto a validar:** con datos sintéticos simples el baseline empata o gana, y el criterio rechaza correctamente al retador. El resultado con Favorita real queda documentado en `reports/`.
+
+## 7. Orquestación (Airflow 3)
+
+- **Cuatro DAGs**, con la lógica en `src/inventario/` y los DAGs solo traduciendo el contexto de Airflow. `ingesta_validacion` (diario) publica el asset `bandeja_procesada` con el `corte` en el evento; `preparacion_datos` y `seguimiento_desempeno` se disparan por ese asset; `pronostico_pedido` es semanal.
+- **Corte de cada corrida:** evento de asset (el más reciente si se acumularon varios), si no `logical_date`, si no `run_after`, si no el último día ingerido. Así el backfill reproduce la historia con el corte correcto.
+- **Archivos inválidos:** la ingesta falla solo si llegaron archivos inválidos *nuevos* (ventana del último día), para que un archivo ya reportado no deje fallando todas las corridas siguientes. El pronóstico **sigue** con los archivos en cuarentena excluidos y deja el conteo en `metadata.json` (`calidad`), porque detener el pedido semanal por un solo día malo es más caro que pronosticar con el último dato válido, y queda auditable.
+- **Idempotencia:** escrituras atómicas (tmp + rename) y firma de entradas; repetir una tarea produce los mismos bytes.
+
+## 8. DVC y reproducibilidad
+
+- Pipeline `bandeja -> ingesta -> features -> entrenamiento -> pronostico -> seguimiento`; cortes en `params.yaml`. Features y modelos se materializan con una **firma** (datos válidos hasta el corte + configuración); si cambia algo, se regeneran.
+- Un pronóstico pasado se reproduce regenerándolo en un directorio temporal con la lectura as-of a su corte y comparando el SHA del CSV publicado (`verificar_pronostico.py`). Una corrección que llega después no lo altera.
+- Salidas con `persist: true` para conservar cortes anteriores. El modelo vigente vive en Git (`config/vigente.json`).
+- El repositorio es público para poder proteger `main` en el plan gratuito de GitHub.
