@@ -1,0 +1,75 @@
+# Pipeline reproducible: bandeja -> ingesta -> features -> entrenamiento -> pronóstico -> seguimiento.
+# Los datos de entrada (data/raw) se versionan con `dvc add data/raw` (data/raw.dvc).
+stages:
+  bandeja:
+    cmd: python scripts/generar_bandeja.py --raw data/raw --salida data ${anomalias_flag}
+    deps:
+      - data/raw
+      - scripts/generar_bandeja.py
+      - src/inventario/bandeja.py
+      - config/fuentes.yaml
+    outs:
+      - data/historico
+      - data/bandeja
+      - data/anomalias_verdad.csv
+
+  ingesta:
+    cmd: python scripts/ingestar.py --corte ${corte_seguimiento} --permitir-cuarentena
+    deps:
+      - data/bandeja
+      - scripts/ingestar.py
+      - src/inventario/ingesta.py
+      - src/inventario/validacion.py
+      - src/inventario/lectura.py
+      - config/fuentes.yaml
+    outs:
+      - data/procesado
+      - data/cuarentena
+
+  features:
+    cmd: python scripts/preparar.py --corte ${corte}
+    deps:
+      - data/bandeja
+      - data/procesado
+      - scripts/preparar.py
+      - src/inventario
+      - config/modelo.yaml
+    outs:
+      - data/features:
+          persist: true   # conserva los cortes anteriores
+
+  entrenamiento:
+    cmd: python scripts/entrenar.py --corte ${corte}
+    deps:
+      - data/features
+      - scripts/entrenar.py
+      - src/inventario
+      - config/modelo.yaml
+    outs:
+      - data/modelos:
+          persist: true
+
+  pronostico:
+    cmd: python scripts/pronosticar.py --corte ${corte} --modelo ${modelo}
+    deps:
+      - data/modelos
+      - data/features
+      - scripts/pronosticar.py
+      - src/inventario
+      - config/costos.yaml
+      - config/modelo.yaml
+      - config/vigente.json
+    outs:
+      - data/forecasts:
+          persist: true
+
+  seguimiento:
+    cmd: python scripts/seguimiento.py --corte ${corte_seguimiento}
+    deps:
+      - data/forecasts
+      - data/procesado
+      - scripts/seguimiento.py
+      - src/inventario
+    outs:
+      - data/seguimiento:
+          persist: true

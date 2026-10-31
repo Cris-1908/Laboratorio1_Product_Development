@@ -8,6 +8,7 @@ El objetivo se modela en log1p; los cuantiles se conservan al des-transformar.
 """
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import math
@@ -22,7 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .config import costos_para
+from .config import CONFIG_DIR, costos_para
 from .lectura import cargar_manifest, corte_ts, leer_asof
 
 REZAGO_VENTAS = pd.Timedelta(days=1, hours=6)
@@ -300,6 +301,9 @@ def decidir_reemplazo(res: pd.DataFrame, vigente: str, retador: str, cfg: dict) 
 
 
 # --------------------------------------------------------- producción y trazabilidad
+RUTA_VIGENTE = CONFIG_DIR / "vigente.json"   # versionado en Git: el modelo vigente queda auditado
+
+
 def _escribir_atomico(ruta: Path, contenido: str | bytes) -> None:
     ruta.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=ruta.parent, suffix=".tmp")
@@ -308,10 +312,17 @@ def _escribir_atomico(ruta: Path, contenido: str | bytes) -> None:
     os.replace(tmp, ruta)
 
 
+def _firma(obj) -> str:
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def huella_datos(corte, data_dir) -> str:
-    """Hash de lo que se sabía al corte (archivos, versiones y llegada), para trazabilidad."""
-    m = cargar_manifest(Path(data_dir) / "bandeja")
-    m = m[m.llegada_ts <= corte_ts(corte)].sort_values(["fuente", "fecha_negocio", "version"])
+    """Hash de los archivos VÁLIDOS disponibles al corte (nombre y llegada): qué se sabía y qué se usó."""
+    data_dir = Path(data_dir)
+    m = cargar_manifest(data_dir / "bandeja")
+    m = m[m.llegada_ts <= corte_ts(corte)]
+    m = m[m.archivo.map(lambda a: (data_dir / "procesado" / a).exists()).astype(bool)]
+    m = m.sort_values(["fuente", "fecha_negocio", "version"])
     return hashlib.sha256(m[["archivo", "llegada_ts"]].to_csv(index=False).encode()).hexdigest()
 
 
@@ -322,21 +333,63 @@ def _git_sha() -> str:
         return "desconocido"
 
 
-def entrenar_y_guardar(corte, data_dir, cfg_modelo: dict) -> Path:
-    """Entrena LightGBM con lo disponible al corte y guarda el modelo en data/modelos/lgbm_<origen>/."""
-    H, qs, ent = int(cfg_modelo["horizonte_dias"]), cfg_modelo["cuantiles"], cfg_modelo["entrenamiento"]
-    panel = construir_panel(corte, data_dir, dias=int(ent["dias_historia"]) + int(ent["dias_extra_features"]) + H)
+def _dias_panel(cfg_modelo: dict) -> int:
+    ent = cfg_modelo["entrenamiento"]
+    return int(ent["dias_historia"]) + int(ent["dias_extra_features"]) + int(cfg_modelo["horizonte_dias"])
+
+
+def carpeta_features(corte, data_dir) -> Path:
+    return Path(data_dir) / "features" / f"corte={corte_ts(corte):%Y-%m-%d}"
+
+
+def preparar_features(corte, data_dir, cfg_modelo: dict, forzar: bool = False) -> Path:
+    """Materializa las features de entrenamiento y de pronóstico as-of corte.
+    Idempotente: si los datos válidos y la configuración no cambiaron, no recalcula."""
+    H, ent = int(cfg_modelo["horizonte_dias"]), cfg_modelo["entrenamiento"]
+    carpeta = carpeta_features(corte, data_dir)
+    firma = _firma(dict(H=H, ent=ent, datos=huella_datos(corte, data_dir)))
+    meta_path = carpeta / "meta.json"
+    if not forzar and meta_path.exists() and json.loads(meta_path.read_text(encoding="utf-8")).get("firma") == firma:
+        return carpeta
+    panel = construir_panel(corte, data_dir, dias=_dias_panel(cfg_modelo))
     fam_cats = sorted(panel.series.family.unique())
     X = dataset_entrenamiento(panel, H, ent, fam_cats)
+    Xp = features_origen(panel, panel.i_origen, H, fam_cats)
+    Xp = Xp[Xp.m28.notna()].reset_index(drop=True)  # solo series activas
+    for nombre, df in (("entrenamiento", X), ("pronostico", Xp)):
+        _escribir_atomico(carpeta / f"{nombre}.csv.gz", gzip.compress(df.to_csv(index=False).encode(), mtime=0))
+    meta = dict(firma=firma, corte=f"{corte_ts(corte):%Y-%m-%d}", origen=f"{panel.fechas[-1]:%Y-%m-%d}",
+                horizonte=H, fam_cats=fam_cats, filas_entrenamiento=int(len(X)), filas_pronostico=int(len(Xp)))
+    _escribir_atomico(meta_path, json.dumps(meta, ensure_ascii=False, indent=2))  # al final: marca "completo"
+    return carpeta
+
+
+def cargar_features(carpeta) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    carpeta = Path(carpeta)
+    meta = json.loads((carpeta / "meta.json").read_text(encoding="utf-8"))
+
+    def leer(n):
+        return pd.read_csv(carpeta / f"{n}.csv.gz", parse_dates=["fecha"])
+    return leer("entrenamiento"), leer("pronostico"), meta
+
+
+def entrenar_y_guardar(corte, data_dir, cfg_modelo: dict) -> Path:
+    """Entrena LightGBM con las features del corte y guarda data/modelos/lgbm_<origen>/ (idempotente)."""
+    qs = cfg_modelo["cuantiles"]
+    X, _, fmeta = cargar_features(preparar_features(corte, data_dir, cfg_modelo))
+    destino = Path(data_dir) / "modelos" / f"lgbm_{fmeta['origen']}"
+    firma_modelo = _firma(dict(features=fmeta["firma"], params=cfg_modelo["lightgbm"], cuantiles=qs))
+    if (destino / "meta.json").exists() and \
+            json.loads((destino / "meta.json").read_text(encoding="utf-8")).get("firma_modelo") == firma_modelo:
+        return destino
     mods = entrenar_lgbm(X, qs, cfg_modelo["lightgbm"])
-    destino = Path(data_dir) / "modelos" / f"lgbm_{panel.fechas[-1]:%Y-%m-%d}"
     destino.parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(dir=destino.parent))
     for q, b in mods.items():
         b.save_model(str(tmp / f"{col(q)}.txt"))
-    meta = dict(corte=str(corte_ts(corte)), origen=f"{panel.fechas[-1]:%Y-%m-%d}", cuantiles=qs, horizonte=H,
-                fam_cats=fam_cats, filas_entrenamiento=int(len(X)), params=cfg_modelo["lightgbm"],
-                git_sha=_git_sha(), huella_datos=huella_datos(corte, data_dir))
+    meta = dict(firma_modelo=firma_modelo, corte=str(corte_ts(corte)), origen=fmeta["origen"], cuantiles=qs,
+                horizonte=fmeta["horizonte"], fam_cats=fmeta["fam_cats"], filas_entrenamiento=fmeta["filas_entrenamiento"],
+                params=cfg_modelo["lightgbm"], git_sha=_git_sha(), huella_datos=huella_datos(corte, data_dir))
     (tmp / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     if destino.exists():
         shutil.rmtree(destino)
@@ -352,29 +405,31 @@ def cargar_modelo(ruta) -> tuple[dict, dict]:
     return mods, meta
 
 
-def leer_vigente(data_dir) -> str:
-    ruta = Path(data_dir) / "modelos" / "vigente.json"
-    return json.loads(ruta.read_text())["modelo"] if ruta.exists() else "baseline"
+def leer_vigente(ruta=None) -> str:
+    ruta = Path(ruta or RUTA_VIGENTE)
+    return json.loads(ruta.read_text(encoding="utf-8"))["modelo"] if ruta.exists() else "baseline"
 
 
-def escribir_vigente(data_dir, modelo: str, decision: dict | None = None) -> None:
-    _escribir_atomico(Path(data_dir) / "modelos" / "vigente.json",
+def escribir_vigente(modelo: str, decision: dict | None = None, ruta=None) -> None:
+    _escribir_atomico(Path(ruta or RUTA_VIGENTE),
                       json.dumps(dict(modelo=modelo, decision=decision), ensure_ascii=False, indent=2))
 
 
-def generar_pronostico(corte, data_dir, cfg_modelo: dict, cfg_costos: dict, modelo: str = "vigente") -> pd.DataFrame:
-    """Pronóstico + pedido sugerido para el corte. `modelo`: baseline | lgbm (entrena al corte) | vigente."""
-    H, qs, ent = int(cfg_modelo["horizonte_dias"]), cfg_modelo["cuantiles"], cfg_modelo["entrenamiento"]
+def generar_pronostico(corte, data_dir, cfg_modelo: dict, cfg_costos: dict, modelo: str = "vigente",
+                       ruta_vigente=None) -> pd.DataFrame:
+    """Pronóstico + pedido sugerido para el corte. `modelo`: baseline | lgbm | vigente."""
+    H, qs = int(cfg_modelo["horizonte_dias"]), cfg_modelo["cuantiles"]
     if modelo == "vigente":
-        modelo = "baseline" if leer_vigente(data_dir) == "baseline" else "lgbm"
-    panel = construir_panel(corte, data_dir, dias=int(ent["dias_historia"]) + int(ent["dias_extra_features"]) + H)
+        modelo = "baseline" if leer_vigente(ruta_vigente) == "baseline" else "lgbm"
     if modelo == "baseline":
+        panel = construir_panel(corte, data_dir, dias=_dias_panel(cfg_modelo))
         fc = pronostico_baseline(panel, H, qs, cfg_modelo["baseline"]["n_semanas"])
         id_modelo = "baseline"
     else:
         ruta = entrenar_y_guardar(corte, data_dir, cfg_modelo)
-        mods, meta = cargar_modelo(ruta)
-        fc = pronostico_lgbm(panel, mods, H, qs, meta["fam_cats"])
+        mods, _ = cargar_modelo(ruta)
+        _, Xp, _ = cargar_features(carpeta_features(corte, data_dir))
+        fc = predecir_lgbm(mods, Xp, qs)
         id_modelo = ruta.name
     out = pedido_sugerido(fc, cfg_costos, qs)
     out.insert(0, "modelo", id_modelo)
@@ -382,7 +437,7 @@ def generar_pronostico(corte, data_dir, cfg_modelo: dict, cfg_costos: dict, mode
     return out.sort_values(["store_nbr", "family", "fecha"]).reset_index(drop=True)
 
 
-def publicar_pronostico(df: pd.DataFrame, corte, data_dir, cfg_modelo: dict) -> Path:
+def publicar_pronostico(df: pd.DataFrame, corte, data_dir, cfg_modelo: dict, extra: dict | None = None) -> Path:
     """Escritura idempotente (reemplazo atómico) con metadata de trazabilidad."""
     c = corte_ts(corte).strftime("%Y-%m-%d")
     carpeta = Path(data_dir) / "forecasts" / f"corte={c}"
@@ -390,5 +445,6 @@ def publicar_pronostico(df: pd.DataFrame, corte, data_dir, cfg_modelo: dict) -> 
     meta = dict(corte=c, modelo=str(df.modelo.iloc[0]), filas=int(len(df)), git_sha=_git_sha(),
                 huella_datos=huella_datos(corte, data_dir), horizonte=cfg_modelo["horizonte_dias"],
                 cuantiles=cfg_modelo["cuantiles"])
+    meta.update(extra or {})
     _escribir_atomico(carpeta / "metadata.json", json.dumps(meta, ensure_ascii=False, indent=2))
     return carpeta

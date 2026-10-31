@@ -37,8 +37,8 @@ def main() -> None:
     res.to_csv(out / f"backtest_{a.corte}.csv", index=False)
     (out / f"decision_{a.corte}.json").write_text(json.dumps(dec, ensure_ascii=False, indent=2), encoding="utf-8")
     if a.promover:
-        escribir_vigente(a.data, "lgbm" if dec["reemplaza"] else "baseline", dec)
-        print("Modelo vigente:", leer_vigente(a.data))
+        escribir_vigente("lgbm" if dec["reemplaza"] else "baseline", dec)
+        print("Modelo vigente (config/vigente.json):", leer_vigente())
 
 
 if __name__ == "__main__":

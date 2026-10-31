@@ -1,0 +1,18 @@
+# Se suma automáticamente al docker-compose.yaml OFICIAL de Airflow 3 (ver README). No lo modifica:
+# monta el proyecto dentro de los contenedores, para que los DAGs importen `inventario` y lean/escriban data/.
+x-proyecto: &proyecto
+  environment:
+    PYTHONPATH: /opt/airflow/proyecto/src
+    PROYECTO_DIR: /opt/airflow/proyecto
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  volumes:
+    - ./:/opt/airflow/proyecto
+    - ./dags:/opt/airflow/dags   # los DAGs del repo (reemplaza el mount de AIRFLOW_PROJ_DIR)
+
+services:
+  airflow-init: *proyecto
+  airflow-scheduler: *proyecto
+  airflow-dag-processor: *proyecto
+  airflow-api-server: *proyecto
+  airflow-worker: *proyecto
+  airflow-triggerer: *proyecto

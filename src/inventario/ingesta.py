@@ -32,6 +32,7 @@ class ReporteIngesta:
     corte: pd.Timestamp
     procesados: list[str] = field(default_factory=list)
     cuarentena: dict[str, list[str]] = field(default_factory=dict)
+    llegada_cuarentena: dict[str, pd.Timestamp] = field(default_factory=dict)
     advertencias: dict[str, list[str]] = field(default_factory=dict)
     faltantes: dict[str, list[str]] = field(default_factory=dict)
 
@@ -51,9 +52,16 @@ class ReporteIngesta:
         return "\n".join(l)
 
 
-def exigir_ok(rep: ReporteIngesta) -> None:
-    if not rep.ok:
-        raise IngestaInvalida(rep.resumen())
+def exigir_ok(rep: ReporteIngesta, desde=None) -> None:
+    """Falla si hay archivos en cuarentena. Con `desde`, solo cuenta los que llegaron después
+    (así un archivo inválido viejo, ya reportado, no hace fallar todas las corridas siguientes)."""
+    if desde is None:
+        nuevos = dict(rep.cuarentena)
+    else:
+        limite = corte_ts(desde)
+        nuevos = {a: m for a, m in rep.cuarentena.items() if rep.llegada_cuarentena[a] > limite}
+    if nuevos:
+        raise IngestaInvalida("; ".join(f"{a}: {', '.join(m)}" for a, m in nuevos.items()))
 
 
 def _copia_atomica(origen: Path, destino: Path) -> None:
@@ -87,6 +95,8 @@ def ingestar(corte, data_dir, cfg: dict, desde=None) -> ReporteIngesta:
     rep = ReporteIngesta(corte=corte)
     bandeja, proc, cuar = data_dir / "bandeja", data_dir / "procesado", data_dir / "cuarentena"
 
+    proc.mkdir(parents=True, exist_ok=True)
+    cuar.mkdir(parents=True, exist_ok=True)
     m = cargar_manifest(bandeja)
     nuevos = m[m.llegada_ts <= corte]
     if desde is not None:
@@ -105,6 +115,7 @@ def ingestar(corte, data_dir, cfg: dict, desde=None) -> ReporteIngesta:
             rep.advertencias[r.archivo] = avisos
         if errores:
             rep.cuarentena[r.archivo] = errores
+            rep.llegada_cuarentena[r.archivo] = r.llegada_ts
             _copia_atomica(origen, cuar / r.archivo)
             (cuar / f"{r.archivo}.motivo.json").write_text(
                 json.dumps({"archivo": r.archivo, "llegada_ts": r.llegada_ts.isoformat(),

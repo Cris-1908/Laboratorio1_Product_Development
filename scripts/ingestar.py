@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-"""Valida e ingesta lo que haya llegado a la bandeja hasta el corte. Sale con código 1 si hay cuarentena."""
+"""Valida e ingesta lo que haya llegado a la bandeja hasta el corte.
+Sale con código 1 si hay archivos en cuarentena (salvo --permitir-cuarentena, útil dentro de DVC)."""
 import argparse
 import sys
 from pathlib import Path
@@ -16,11 +17,12 @@ def main() -> None:
     p.add_argument("--desde", default=None, help="ingesta incremental: solo llegadas posteriores a esta fecha")
     p.add_argument("--data", default="data")
     p.add_argument("--config", default="fuentes.yaml")
+    p.add_argument("--permitir-cuarentena", action="store_true", help="no falla aunque haya archivos inválidos")
     a = p.parse_args()
 
     rep = ingestar(a.corte, a.data, cargar_yaml(a.config), desde=a.desde)
     print(rep.resumen())
-    sys.exit(0 if rep.ok else 1)
+    sys.exit(0 if (rep.ok or a.permitir_cuarentena) else 1)
 
 
 if __name__ == "__main__":
