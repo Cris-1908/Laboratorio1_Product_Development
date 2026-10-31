@@ -1,0 +1,13 @@
+{
+  "reemplaza": true,
+  "folds_ganados": 4,
+  "folds_requeridos": 3,
+  "mejora_costo_pct": [
+    5.69,
+    20.19,
+    7.5,
+    12.83
+  ],
+  "cambio_pinball_pct": -7.9,
+  "motivo": "costo: 4/4 folds con mejora >= 2.0% (requeridos 3); pinball -7.90% (máx 0.0%)"
+}
