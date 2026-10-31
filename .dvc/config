@@ -1,0 +1,4 @@
+[core]
+    remote = local
+['remote "local"']
+    url = /home/crist/dvc_remoto
