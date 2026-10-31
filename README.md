@@ -40,6 +40,12 @@ python scripts/seguimiento.py --corte 2017-08-14
 python scripts/verificar_pronostico.py --corte 2017-06-30
 ```
 
+La reproducción es exacta (mismo SHA del CSV) cuando se usan las versiones fijadas en `requirements.txt` (pandas 3.0.5, numpy 2.5.3, lightgbm 4.7.0), que son las del contenedor de Airflow. Con otra versión de pandas el resultado difiere en decimales. Dentro del contenedor:
+
+```bash
+docker compose exec -T -w /opt/airflow/proyecto airflow-worker python scripts/verificar_pronostico.py --corte 2017-07-02
+```
+
 ## DVC (datos, pipeline y reproducibilidad)
 
 ```bash

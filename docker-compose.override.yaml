@@ -13,6 +13,6 @@ services:
   airflow-init: *proyecto
   airflow-scheduler: *proyecto
   airflow-dag-processor: *proyecto
-  airflow-api-server: *proyecto
+  airflow-apiserver: *proyecto
   airflow-worker: *proyecto
   airflow-triggerer: *proyecto

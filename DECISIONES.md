@@ -68,3 +68,4 @@ Formato: decisión, alternativas consideradas, justificación.
 - Un pronóstico pasado se reproduce regenerándolo en un directorio temporal con la lectura as-of a su corte y comparando el SHA del CSV publicado (`verificar_pronostico.py`). Una corrección que llega después no lo altera.
 - Salidas con `persist: true` para conservar cortes anteriores. El modelo vigente vive en Git (`config/vigente.json`).
 - El repositorio es público para poder proteger `main` en el plan gratuito de GitHub.
+- **Versiones fijadas.** Una prueba real mostró que regenerar un pronóstico con pandas 3.1.0 (local) en vez de 3.0.5 (contenedor) cambiaba el SHA del CSV, aunque LightGBM fuera el mismo. Por eso `requirements.txt` y `requirements-airflow.txt` fijan pandas, numpy y lightgbm con las versiones del contenedor.
