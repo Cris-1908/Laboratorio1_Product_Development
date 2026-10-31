@@ -1,0 +1,203 @@
+schema: '2.0'
+stages:
+  bandeja:
+    cmd: 'python scripts/generar_bandeja.py --raw data/raw --salida data '
+    deps:
+    - path: config/fuentes.yaml
+      hash: md5
+      md5: 2d8a3cd55224cf8ac388a99baa591a19
+      size: 1045
+    - path: data/raw
+      hash: md5
+      md5: bdc16ae394251e429e0116e457456a39.dir
+      size: 123397286
+      nfiles: 5
+    - path: scripts/generar_bandeja.py
+      hash: md5
+      md5: 724f24923bf303c68a412677f362b286
+      size: 1036
+    - path: src/inventario/bandeja.py
+      hash: md5
+      md5: b1353816561a81405582fd7c3cb6879a
+      size: 7482
+    outs:
+    - path: data/anomalias_verdad.csv
+      hash: md5
+      md5: c6f5253ee3084d92c013baedd82e8756
+      size: 402
+    - path: data/bandeja
+      hash: md5
+      md5: c63264e04e3ce3143bd62396300ad525.dir
+      size: 17612677
+      nfiles: 688
+    - path: data/historico
+      hash: md5
+      md5: 23f9915db6bd08dfff1c9db5092fa916.dir
+      size: 106449570
+      nfiles: 5
+  ingesta:
+    cmd: python scripts/ingestar.py --corte 2017-08-14 --permitir-cuarentena
+    deps:
+    - path: config/fuentes.yaml
+      hash: md5
+      md5: 2d8a3cd55224cf8ac388a99baa591a19
+      size: 1045
+    - path: data/bandeja
+      hash: md5
+      md5: c63264e04e3ce3143bd62396300ad525.dir
+      size: 17612677
+      nfiles: 688
+    - path: scripts/ingestar.py
+      hash: md5
+      md5: f141d23e129b5ecd1d5ba91b809613cb
+      size: 1149
+    - path: src/inventario/ingesta.py
+      hash: md5
+      md5: e0c0f9c4d89ce29e39b8cd257961c9bb
+      size: 5486
+    - path: src/inventario/lectura.py
+      hash: md5
+      md5: d4381f0dfaf8d4ccd5d89cd06725ff9c
+      size: 2432
+    - path: src/inventario/validacion.py
+      hash: md5
+      md5: 3136fbf5af0984377bdf2664b625c060
+      size: 3568
+    outs:
+    - path: data/cuarentena
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+    - path: data/procesado
+      hash: md5
+      md5: 595bf7e6583dc272e87f3ff09dd48094.dir
+      size: 17411658
+      nfiles: 649
+  features:
+    cmd: python scripts/preparar.py --corte 2017-07-31
+    deps:
+    - path: config/modelo.yaml
+      hash: md5
+      md5: bdedad07116fc23d58874232d92aa7ae
+      size: 1335
+    - path: data/bandeja
+      hash: md5
+      md5: c63264e04e3ce3143bd62396300ad525.dir
+      size: 17612677
+      nfiles: 688
+    - path: data/procesado
+      hash: md5
+      md5: 595bf7e6583dc272e87f3ff09dd48094.dir
+      size: 17411658
+      nfiles: 649
+    - path: scripts/preparar.py
+      hash: md5
+      md5: 4b48c7bc21db6a20823874bb887ac997
+      size: 729
+    - path: src/inventario
+      hash: md5
+      md5: 2931642eb5856225f0e566d1244e89ff.dir
+      size: 47652
+      nfiles: 9
+    outs:
+    - path: data/features
+      hash: md5
+      md5: ddc810ea3fd9197e7b45a69d1c94179e.dir
+      size: 17828646
+      nfiles: 3
+  entrenamiento:
+    cmd: python scripts/entrenar.py --corte 2017-07-31
+    deps:
+    - path: config/modelo.yaml
+      hash: md5
+      md5: bdedad07116fc23d58874232d92aa7ae
+      size: 1335
+    - path: data/features
+      hash: md5
+      md5: ddc810ea3fd9197e7b45a69d1c94179e.dir
+      size: 17828646
+      nfiles: 3
+    - path: scripts/entrenar.py
+      hash: md5
+      md5: 04aaab6ce554f8018e9aa1ede0d3969b
+      size: 717
+    - path: src/inventario
+      hash: md5
+      md5: 2931642eb5856225f0e566d1244e89ff.dir
+      size: 47652
+      nfiles: 9
+    outs:
+    - path: data/modelos
+      hash: md5
+      md5: b275b18a33c4d744022c621ea6eca22c.dir
+      size: 4399477
+      nfiles: 6
+  pronostico:
+    cmd: python scripts/pronosticar.py --corte 2017-07-31 --modelo vigente
+    deps:
+    - path: config/costos.yaml
+      hash: md5
+      md5: 944ab321b40087e681f644715b55ea57
+      size: 1103
+    - path: config/modelo.yaml
+      hash: md5
+      md5: bdedad07116fc23d58874232d92aa7ae
+      size: 1335
+    - path: config/vigente.json
+      hash: md5
+      md5: ddd65622f2af19efeeffd71013a3f3f6
+      size: 47
+    - path: data/features
+      hash: md5
+      md5: ddc810ea3fd9197e7b45a69d1c94179e.dir
+      size: 17828646
+      nfiles: 3
+    - path: data/modelos
+      hash: md5
+      md5: b275b18a33c4d744022c621ea6eca22c.dir
+      size: 4399477
+      nfiles: 6
+    - path: scripts/pronosticar.py
+      hash: md5
+      md5: cd33569b074ee5a3f8ea533f2f9ca80e
+      size: 1037
+    - path: src/inventario
+      hash: md5
+      md5: 2931642eb5856225f0e566d1244e89ff.dir
+      size: 47652
+      nfiles: 9
+    outs:
+    - path: data/forecasts
+      hash: md5
+      md5: 40d07cc4aee14b175d672b67850a0189.dir
+      size: 1407964
+      nfiles: 2
+  seguimiento:
+    cmd: python scripts/seguimiento.py --corte 2017-08-14
+    deps:
+    - path: data/forecasts
+      hash: md5
+      md5: 40d07cc4aee14b175d672b67850a0189.dir
+      size: 1407964
+      nfiles: 2
+    - path: data/procesado
+      hash: md5
+      md5: 595bf7e6583dc272e87f3ff09dd48094.dir
+      size: 17411658
+      nfiles: 649
+    - path: scripts/seguimiento.py
+      hash: md5
+      md5: 0752517e5ddce31e0b1a6d914118f485
+      size: 896
+    - path: src/inventario
+      hash: md5
+      md5: 2931642eb5856225f0e566d1244e89ff.dir
+      size: 47652
+      nfiles: 9
+    outs:
+    - path: data/seguimiento
+      hash: md5
+      md5: 390b3139faced68ac17b177706ad1f81.dir
+      size: 365
+      nfiles: 1
