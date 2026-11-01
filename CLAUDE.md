@@ -40,4 +40,4 @@ Producto de ML reproducible (Git + DVC + Airflow 3) que genera pronóstico de ve
 
 ## Estilo
 
-Python 3.11+, tipado básico, funciones puras donde se pueda, sin lógica de negocio dentro de DAGs. Documentar en `DECISIONES.md` cualquier decisión sobre disponibilidad temporal, validación y correcciones.
+Python 3.12+, tipado básico, funciones puras donde se pueda, sin lógica de negocio dentro de DAGs. Documentar en `DECISIONES.md` cualquier decisión sobre disponibilidad temporal, validación y correcciones.
