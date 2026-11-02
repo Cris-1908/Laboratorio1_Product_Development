@@ -1,71 +1,81 @@
 # DECISIONES
 
-Formato: decisión, alternativas consideradas, justificación.
+Aquí explico las decisiones importantes del proyecto, qué otras opciones había y por qué escogí esta.
 
-## 1. Disponibilidad de la información en el tiempo
+## 1. Qué información puede usar el modelo en cada momento
 
-**Decisión:** cada archivo de la bandeja tiene `llegada_ts` en `manifest.csv`. Toda lectura es "as-of corte" (`inventario.lectura.leer_asof`): solo `llegada_ts <= corte`, y por (fuente, fecha_negocio) se usa la última versión **válida** disponible a ese corte. Cada fila lleva `available_at` y `version`.
+En la vida real los datos no llegan al instante: las ventas de un día llegan hasta el día siguiente. Si el modelo usara datos que en ese momento todavía no existían, los resultados saldrían demasiado buenos y no servirían de nada. Por eso cada archivo tiene anotada su hora de llegada (llegada_ts en manifest.csv), y cada vez que leo datos le digo al sistema "hasta qué momento" quiero ver (el corte). Solo se leen archivos que llegaron antes de ese corte, y de cada fecha uso la última versión válida que ya había llegado.
 
-- Un `corte` sin hora se interpreta como **fin de ese día** (23:59:59): información disponible al cierre.
-- Rezagos simulados: ventas y transacciones D+1 06:00, petróleo D+2, feriados 30 días antes.
-- Feriados son futuro-conocido legítimo solo si ya llegaron al corte.
-- Alternativa rechazada: filtrar solo por fecha de negocio. Ignora rezagos y correcciones, y produce fuga de información.
+Si el corte no trae hora, lo tomo como el final de ese día (23:59). Los retrasos que simulé son: ventas y transacciones llegan al día siguiente a las 6am, el petróleo a los 2 días, y los feriados se conocen 30 días antes.
 
-### Features sin fuga de información
-- Un pronóstico con corte C se emite desde el **origen** = último día cuyo archivo ya llegó (C menos 1 día 6 h, a fecha). Toda feature usa solo datos con fecha <= origen.
-- Enfoque **directo multi-horizonte**: una fila por (origen, horizonte h, serie) con `h` como feature. Las medias móviles (7, 28, 91 días) terminan en el origen. Los rezagos "mismo día de la semana" usan la semana mínima k = ceil(h/7), así el rezago siempre cae en o antes del origen (lag >= horizonte).
-- `onpromotion` de días futuros **no** se usa (no llega por adelantado en la bandeja); solo el promedio de promociones de los últimos 7 y 28 días.
-- Futuro-conocido legítimo: calendario (día de la semana, día del mes, quincena/fin de mes) y feriados nacionales **que ya llegaron al corte** (llegan 30 días antes). Se ignoran feriados regionales y locales (simplificación).
-- Probado: envenenar los datos posteriores al origen no cambia ninguna feature.
+La otra opción era filtrar solo por la fecha de la venta. La descarté porque ignora los retrasos y las correcciones, y deja que el modelo vea el futuro sin querer.
 
-## 2. Simulación del sistema de origen
+Para las features hago lo mismo. El pronóstico sale desde un origen, que es el último día del que ya hay datos. Por ejemplo, si el corte es el 12 de mayo, las ventas del 12 llegan el 13, así que el origen es el 11 de mayo y todo se calcula con datos hasta esa fecha. Con un solo modelo predigo los 7 días siguientes, y el número de días hacia adelante entra como una columna más. Uso promedios de las últimas 1, 4 y 13 semanas aproximadamente (7, 28 y 91 días) y el valor del mismo día de la semana de semanas anteriores, siempre sin pasar el origen.
 
-**Decisión:** carga histórica hasta 2016-12-31; el resto se reparte en archivos por fecha y fuente. Correcciones: una v1 distorsionada llega primero y una v2 con el dato real llega 3 a 10 días después. Generación determinista (semilla fija). Con `--anomalias` se inyectan archivos defectuosos y se registran en `data/anomalias_verdad.csv` (fuera de la bandeja) para probar la validación.
+No uso las promociones de los días futuros porque en el momento de pedir no se conocen. Sí uso el calendario y los feriados nacionales que ya hayan llegado. Los feriados regionales y locales los ignoré para simplificar. Además hay un test que cambia los datos posteriores al origen y comprueba que ninguna feature se mueve.
 
-## 3. Validación de datos
+## 2. Cómo simulé el sistema de origen
 
-**Decisión:** cada archivo (todas sus versiones) se valida al ingerirse (`inventario.validacion`).
+Con el CSV de Kaggle no hay forma de probar cómo llegan los datos en el tiempo, porque viene completo. Entonces tomé todo hasta el 31 de diciembre de 2016 como carga histórica, y el resto lo partí en archivos por día y por fuente, cada uno con su hora de llegada.
 
-- **Inválido → cuarentena y falla la tarea:** columnas faltantes, archivo vacío o ilegible, nulos en columnas clave, valores no numéricos, negativos, duplicados por llave, fecha del contenido distinta a la del archivo.
-- **Esperado del negocio → se registra como advertencia, no falla:** petróleo faltante, día completo con ventas en cero, 25 de diciembre sin ventas (`dias_sin_operacion` en `fuentes.yaml`).
-- **Fechas sin archivo:** se reportan como `faltantes` (pueden ser retraso), no se fallan; el modelo trabaja con lo disponible y el reporte las deja visibles.
-- La bandeja nunca se modifica: lo inválido se **copia** a `data/cuarentena/` junto con un `.motivo.json`.
+Para hacerlo más realista, algunos días llegan primero con un valor distorsionado (versión 1) y entre 3 y 10 días después llega la versión corregida (versión 2). Todo es determinista (semilla fija), así que sale igual cada vez. También hay una opción para meter archivos defectuosos a propósito (--anomalias), y los registro en un archivo aparte para poder probar que la validación los detecta.
 
-## 4. Manejo de correcciones y reprocesamiento
+## 3. Qué hago con datos malos
 
-**Decisión:** `data/procesado/` conserva **todas las versiones válidas** (`<fecha>_v<k>.csv`), no solo la última. Así `leer_asof` reproduce exactamente lo que se sabía en cualquier corte pasado (un pronóstico del pasado no cambia cuando llega una corrección posterior).
+Cada archivo se revisa cuando entra. Si está roto (faltan columnas, está vacío, tiene valores no numéricos, negativos, duplicados, o la fecha de adentro no coincide con la del archivo), lo copio a una carpeta de cuarentena con el motivo, y la tarea falla para que alguien se entere.
 
-- Si la última versión de una fecha es inválida, esa versión va a cuarentena (la tarea falla y alerta) y la lectura as-of usa la última versión válida anterior, nunca datos inválidos.
-- Idempotencia: copia byte a byte con reemplazo atómico (archivo temporal + `os.replace`); re-ejecutar produce archivos idénticos. La ingesta incremental (`desde`) equivale a la completa (probado).
+Hay cosas que parecen raras pero son normales del negocio, como que el 25 de diciembre no haya ventas, un día completo con ceros o que falte el dato del petróleo en fin de semana. Esas solo quedan como advertencia y no detienen nada.
 
-## 5. Costos de negocio
+Si no llega el archivo de algún día, lo reporto como faltante pero no lo trato como error, porque puede ser solo un retraso. El modelo trabaja con lo que haya. La bandeja original nunca se modifica: lo inválido se copia, no se mueve.
 
-**Decisión:** costos en `config/costos.yaml` por familia (supuestos: alta rotación con quiebre más caro, perecederos con merma más cara). Pedido = cuantil `cu/(cu+co)` del pronóstico (newsvendor).
+## 4. Qué hago cuando llega una corrección
 
-## 6. Modelos, validación y criterio de reemplazo
+Guardo todas las versiones válidas de cada día, no solo la última. Así, si más adelante quiero regenerar un pronóstico del pasado, veo exactamente lo que se sabía ese día y no lo que se corrigió después. Si la última versión de un día viene mala, va a cuarentena y se usa la última versión buena anterior, nunca datos inválidos.
 
-- **Horizonte:** 7 días (pedido semanal), configurable en `config/modelo.yaml`.
-- **Baseline:** seasonal naive. Cuantiles empíricos del mismo día de la semana en las últimas 8 semanas. Piso de comparación que además entrega incertidumbre.
-- **Modelo ML:** LightGBM con regresión cuantil (q10, q25, q50, q75, q90), un modelo global por cuantil, objetivo en log1p (los cuantiles se conservan al des-transformar). Cuantiles ordenados para evitar cruces y sin negativos.
-- **Deep learning:** no se usa. El costo (más cómputo, más riesgo de reproducibilidad) no se justifica frente a un modelo de árboles con 1,782 series diarias.
-- **Validación:** rolling-origin con 4 folds separados 14 días, **los mismos folds para todos los modelos**. Cada fold lee la información tal como estaba disponible a su corte (as-of, incluidas las correcciones que aún no habían llegado) y se evalúa contra la realidad final.
-- **Métricas técnicas:** pinball loss (promedio de cuantiles), WAPE y sesgo con la mediana.
-- **Métrica de negocio:** costo = cu·faltante + co·sobrante, con los costos de `config/costos.yaml`, sobre el pedido sugerido.
-- **Pedido sugerido (newsvendor):** cuantil cu/(cu+co) del pronóstico, interpolado linealmente entre los cuantiles disponibles; fuera de [q10, q90] se acota. Pedido diario por tienda y familia.
-- **Criterio de reemplazo:** el retador reemplaza al vigente si baja el costo de negocio >= 2% en al menos 3 de 4 folds **y** su pinball promedio no empeora. Parámetros en `config/modelo.yaml`. El vigente se registra en `config/vigente.json` (en Git, así el cambio de modelo pasa por PR) (por defecto: baseline).
-- **Supuesto a validar:** con datos sintéticos simples el baseline empata o gana, y el criterio rechaza correctamente al retador. El resultado con Favorita real queda documentado en `reports/`.
+Las copias se hacen de forma que repetir el proceso da exactamente los mismos archivos (se escribe a un archivo temporal y luego se renombra). Correr la ingesta completa o por partes da el mismo resultado, y eso está probado.
 
-## 7. Orquestación (Airflow 3)
+## 5. Costos del negocio
 
-- **Cuatro DAGs**, con la lógica en `src/inventario/` y los DAGs solo traduciendo el contexto de Airflow. `ingesta_validacion` (diario) publica el asset `bandeja_procesada` con el `corte` en el evento; `preparacion_datos` y `seguimiento_desempeno` se disparan por ese asset; `pronostico_pedido` es semanal.
-- **Corte de cada corrida:** evento de asset (el más reciente si se acumularon varios), si no `logical_date`, si no `run_after`, si no el último día ingerido. Así el backfill reproduce la historia con el corte correcto.
-- **Archivos inválidos:** la ingesta falla solo si llegaron archivos inválidos *nuevos* (ventana del último día), para que un archivo ya reportado no deje fallando todas las corridas siguientes. El pronóstico **sigue** con los archivos en cuarentena excluidos y deja el conteo en `metadata.json` (`calidad`), porque detener el pedido semanal por un solo día malo es más caro que pronosticar con el último dato válido, y queda auditable.
-- **Idempotencia:** escrituras atómicas (tmp + rename) y firma de entradas; repetir una tarea produce los mismos bytes.
+Equivocarse no cuesta lo mismo para los dos lados. Si pido de menos pierdo ventas (costo cu), y si pido de más se queda inventario o se echa a perder (costo co). Por eso definí costos por familia de producto en config/costos.yaml. Supuse que en productos de mucha rotación faltar cuesta más, y que en perecederos sobrar cuesta más por la merma. Son supuestos míos; en una empresa real vendrían de finanzas.
+
+El pedido sugerido es el cuantil cu/(cu+co) del pronóstico. Por ejemplo, si faltar cuesta 4 y sobrar cuesta 1, pido el cuantil 0.8, o sea, más inventario. Si cambio un costo, cambia el pedido sin tocar el código.
+
+## 6. Modelos, validación y cuándo reemplazar
+
+El horizonte es de 7 días porque el pedido es semanal.
+
+El modelo base (baseline) toma lo que se vendió el mismo día de la semana en las últimas 8 semanas y saca cuantiles de esos valores. Me sirve de piso de comparación, y además da una idea de la incertidumbre.
+
+El modelo de ML es LightGBM con regresión cuantil (q10, q25, q50, q75 y q90), un modelo por cada cuantil entrenado con todas las series juntas. Entreno sobre log1p de las ventas y luego acomodo los cuantiles para que no se crucen ni salgan negativos. No usé deep learning: necesita más cómputo, es más difícil de reproducir y para estas series un modelo de árboles funciona bien.
+
+Para validar uso 4 cortes separados 14 días, los mismos para los dos modelos. En cada corte el modelo solo ve lo que había llegado hasta ese día (incluso con correcciones que todavía no llegaban) y se compara contra la venta real final. Mido pinball loss, WAPE y sesgo, y como métrica de negocio el costo: cu por las unidades que faltaron más co por las que sobraron.
+
+El modelo nuevo reemplaza al vigente si baja el costo al menos 2% en 3 de los 4 cortes y su pinball promedio no empeora. El modelo vigente se guarda en config/vigente.json, que está en Git, así que cambiar de modelo siempre pasa por un Pull Request.
+
+Resultado con los datos reales de Favorita: LightGBM bajó el costo entre 5.7% y 20.2% en los 4 cortes y el pinball promedio bajó 7.9%, así que quedó como modelo vigente. En el corte 3 el pinball de LightGBM fue un poco peor que el del baseline (19.59 contra 19.32), aunque el costo sí mejoró. El detalle está en reports/backtest_2017-06-30.csv.
+
+## 7. Cómo se orquesta con Airflow
+
+Armé 4 DAGs, y la lógica vive en el código del proyecto, no en los DAGs; ellos solo llaman a las funciones. La ingesta corre diario y, cuando termina, avisa con un asset (bandeja_procesada) que lleva la fecha de corte. Ese aviso dispara solo la preparación de datos y el seguimiento del desempeño. El pronóstico y pedido corre semanal.
+
+La fecha de corte de cada corrida sale, en este orden, del aviso del asset, de la fecha lógica de la corrida (así funciona bien el backfill) o del último día ya ingerido.
+
+La ingesta falla solo si llegaron archivos inválidos nuevos en el último día. Si no, un archivo malo viejo haría fallar todas las corridas siguientes. El pronóstico sí sigue aunque haya archivos en cuarentena, dejando fuera esos archivos y anotando cuántos fueron. Prefiero eso a dejar sin pedido la semana por un solo día malo. Todas las tareas se pueden repetir sin cambiar el resultado.
 
 ## 8. DVC y reproducibilidad
 
-- Pipeline `bandeja -> ingesta -> features -> entrenamiento -> pronostico -> seguimiento`; cortes en `params.yaml`. Features y modelos se materializan con una **firma** (datos válidos hasta el corte + configuración); si cambia algo, se regeneran.
-- Un pronóstico pasado se reproduce regenerándolo en un directorio temporal con la lectura as-of a su corte y comparando el SHA del CSV publicado (`verificar_pronostico.py`). Una corrección que llega después no lo altera.
-- Salidas con `persist: true` para conservar cortes anteriores. El modelo vigente vive en Git (`config/vigente.json`).
-- El repositorio es público para poder proteger `main` en el plan gratuito de GitHub.
-- **Versiones fijadas.** Una prueba real mostró que regenerar un pronóstico con pandas 3.1.0 (local) en vez de 3.0.5 (contenedor) cambiaba el SHA del CSV, aunque LightGBM fuera el mismo. Por eso `requirements.txt` y `requirements-airflow.txt` fijan pandas, numpy y lightgbm con las versiones del contenedor.
+Los datos y modelos no van a Git, van a DVC. El pipeline tiene las etapas bandeja, ingesta, features, entrenamiento, pronóstico y seguimiento, y los cortes se cambian en params.yaml. Las salidas conservan los cortes anteriores, así que un corte nuevo no borra los viejos.
+
+Las features y los modelos guardan una firma de lo que los generó (datos válidos hasta el corte y la configuración). Si algo cambia, se regeneran; si no, se reutilizan.
+
+Para comprobar la reproducibilidad hay un script (verificar_pronostico.py) que regenera un pronóstico pasado con los datos de ese momento y compara el archivo con el publicado. Con el de 2017-07-02 salieron idénticos. Al principio me dio distinto: el entorno local tenía pandas 3.1.0 y el contenedor de Airflow 3.0.5, y eso cambiaba los decimales. Por eso fijé las versiones de pandas, numpy y lightgbm en los requirements, y con eso salió igual.
+
+El repositorio es público porque en el plan gratuito de GitHub solo así se puede proteger la rama main.
+
+## 9. Limitaciones que conozco
+
+- Al despausar los DAGs, Airflow lanzó una corrida con la fecha real (2026), muy posterior a los datos (2017), y falló. Debería acotar los DAGs al periodo simulado con end_date o mantenerlos pausados fuera del backfill.
+- Los costos por familia son supuestos míos, no datos reales.
+- Ignoré los feriados regionales y locales.
+- El remoto de DVC es una carpeta local; en un proyecto real sería un almacenamiento en la nube.
+- No investigué por qué el corte 2 mejora tanto (20.2%); podría ser un efecto de calendario, pero es solo una hipótesis.
